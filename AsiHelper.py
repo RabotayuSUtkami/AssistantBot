@@ -1,3 +1,5 @@
+import time
+
 import telebot
 from telebot import types
 from pyowm import OWM
@@ -6,7 +8,8 @@ from pyowm.utils import config as cfg
 from geopy.geocoders import Nominatim
 
 import sqlite3
-
+import schedule
+import threading
 
 
 
@@ -23,7 +26,6 @@ mgr = owm.weather_manager()
 
 markup = types.ReplyKeyboardMarkup(row_width=2)
 itembtn1 = types.KeyboardButton('Отправить адрес' ,request_location = True)
-#types.KeyboardButton
 itembtn2 = types.KeyboardButton('Нет')
 itembtn3 = types.KeyboardButton('d')
 #markup.add(itembtn1, itembtn2, itembtn3)
@@ -31,8 +33,10 @@ markup.add(itembtn1, itembtn2)
 
 
 
-def getWeather(userid):  # получать город из бд
 
+
+
+def getWeather(userid):
     connection = sqlite3.connect('database.db')
     cursor = connection.cursor()
 
@@ -59,13 +63,13 @@ def getWeather(userid):  # получать город из бд
     '''
     bot.send_message(userid, weatherText)
 
-    print(w.detailed_status)         # 'clouds'
-    print(w.wind()       )           # {'speed': 4.6, 'deg': 330}
-    print(w.humidity    )            # 87
-    print("temperature: ", w.temperature('celsius')['temp'])  # {'temp_max': 10.5, 'temp': 9.7, 'temp_min': 9.0}
-    print(w.rain       )             # {}
-    print(w.heat_index)              # None
-    print(w.clouds   )               # 75
+    print(w.detailed_status)
+    print(w.wind())
+    print(w.humidity)
+    print("temperature: ", w.temperature('celsius')['temp'])
+    print(w.rain)
+    print(w.heat_index)
+    print(w.clouds)
 
 
 def requestLocation(messages):
@@ -92,8 +96,7 @@ def send_welcome(message):
     #bot.reply_to(message, "Howdy, how are you doing?") # ответ на сообщение
     bot.send_message(message.chat.id, 'Хотите ли Вы получать прогноз погоды по Вашему местоположению?', reply_markup=markup)
     connection.close()
-    #mesg = bot.send_message(message.chat.id, 'Хотите ли Вы получать прогноз погоды по Вашему местоположению?', reply_markup=markup)
-    #bot.register_next_step_handler(mesg, requestLocation)
+
 
 
 @bot.message_handler(content_types=['location'])
@@ -109,10 +112,8 @@ def handle_messages(messages):
 
     try:
         place = locname.raw['address']['city']
-        #print(place)
     except:
         place = locname.raw['address']['municipality']
-        #print(place)
 
     bot.send_message(messages.chat.id, f'Ваше местоположение получено. Город: {place}')
 
@@ -123,7 +124,6 @@ def handle_messages(messages):
         if row[0] != place:
             cursor.execute('UPDATE users SET location = ? WHERE userId = ?', (place, messages.chat.id))
             connection.commit()
-        #print(row)
 
     connection.close()
     getWeather(messages.chat.id)
@@ -136,5 +136,38 @@ def handle_messages(messages):
         
         bot.send_message(messages.chat.id, 'privet')
 
-bot.infinity_polling()
 
+
+def notification():
+    connection = sqlite3.connect('database.db')
+    cursor = connection.cursor()
+
+    cursor.execute(f'SELECT userId FROM users')
+    results = cursor.fetchall()
+
+    for row in results:
+        userid = row[0]
+        getWeather(userid)
+
+    connection.close()
+
+def checkTime():
+
+    schedule.every().day.at('06:00').do(notification)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(59)
+
+
+#bot.infinity_polling()
+
+
+
+if __name__ == '__main__':
+    t1 = threading.Thread(target=bot.infinity_polling)
+    t2 = threading.Thread(target=checkTime)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
